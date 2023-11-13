@@ -1,0 +1,19 @@
+#!/bin/bash
+DARKGREY=$'\e[1;30m'
+RED=$'\e[1;31m'
+GREEN=$'\e[1;32m'
+YELLOW=$'\e[1;33m'
+BLUE=$'\e[1;34m'
+PURPLE=$'\e[1;35m'
+AQUA=$'\e[1;36m'
+NOSTYLE=$'\e[0m'
+#поискать через find
+. /usr/local/bin/_include
+
+projectDir=$(getProjectDir)
+if [[ ! -z "${projectDir}" ]];  then
+	 cd "${projectDir}"
+	 exec bash
+else
+	printf "${RED}Рабочая директория проекта не найдена${NOSTYLE}"
+fi

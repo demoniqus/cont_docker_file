@@ -1,0 +1,19 @@
+#!/bin/bash
+
+mkdir -p /opt/container/conf/.composer
+
+auto.deploy
+
+ENGINE=$(cat /etc/sysconfig/vhost | grep ENGINE= | sed -r 's/.*=(.*)$/\1/')
+
+if [[ ! -z $ENGINE ]] ; then
+    if [ $ENGINE == 'httpd' ]; then
+        chown -R -H -L apache.apache /var/log/$ENGINE/
+        chown -R -H -L apache.apache /opt/container/projects/$ENGINE/
+    fi
+    if [ $ENGINE == 'nginx' ]; then
+        chown -R -H -L  nginx.nginx /var/log/$ENGINE/
+        chown -R -H -L  nginx.nginx /opt/container/projects/$ENGINE/
+    fi
+fi
+

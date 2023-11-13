@@ -1,0 +1,408 @@
+#!/bin/bash
+
+createHttpdConfig() {
+DST_FILE=$1
+if [ ! -z "${DST_FILE}" ] ; then
+echo '####################################################
+### container/###WEB_ALIAS
+####################################################
+<VirtualHost *:###WEB_PORT>
+	Alias /###WEB_ALIAS ###WEB_DIR
+	ServerName ###WEB_SERVER
+	ServerAlias ###WEB_SERVER_ALIAS
+	ServerAdmin ###WEB_ADMIN_EMAIL
+	DocumentRoot "###WEB_DIR"
+	ErrorLog /var/log/httpd/error-###WEB_ALIAS.log
+	CustomLog /var/log/httpd/access-###WEB_ALIAS.log combined
+	<Directory "###WEB_DIR/">
+		AllowOverride All
+		Require all granted
+		<IfModule mod_rewrite.c>
+			Options -MultiViews
+			RewriteEngine On
+			RewriteCond %{REQUEST_FILENAME} !-f
+			RewriteRule ^(.*)$ index.php [QSA,L]
+		</IfModule>
+	</Directory>
+</VirtualHost>
+' > $DST_FILE
+fi
+}
+
+createNginxConfig() {
+DST_FILE=$1
+if [ ! -z "${DST_FILE}" ] ; then
+echo 'server {
+	listen ###WEB_PORT;
+	server_name ###WEB_SERVER;
+
+	error_log  /var/log/nginx/error.log;
+	access_log /var/log/nginx/access.log;
+	root ###WEB_DIR;
+
+	location / {
+		# try to serve file directly, fallback to index.php
+		try_files $uri /###WEB_INDEX.php$is_args$args;
+	}
+
+	location ~ ^/(app_dev|config)\.php(/|$) {
+		fastcgi_pass unix:/var/run/php-fpm/www.sock;
+		fastcgi_split_path_info ^(.+\.php)(/.*)$;
+		include fastcgi_params;
+		fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+		fastcgi_param DOCUMENT_ROOT $realpath_root;
+	}
+
+	location ~ ^/app\.php(/|$) {
+		fastcgi_pass unix:/var/run/php-fpm/www.sock;
+		fastcgi_split_path_info ^(.+\.php)(/.*)$;
+		include fastcgi_params;
+		fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+		fastcgi_param DOCUMENT_ROOT $realpath_root;
+		internal;
+	}
+
+	location ~ \.php$ {
+		fastcgi_pass unix:/var/run/php-fpm/www.sock;
+		fastcgi_split_path_info ^(.+\.php)(/.*)$;
+		include fastcgi_params;
+		fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+		fastcgi_param DOCUMENT_ROOT $realpath_root;
+		internal;
+	}
+}' > $DST_FILE
+fi
+}
+
+createNginxSecureConfig() {
+DST_FILE=$1
+if [ ! -z "${DST_FILE}" ] ; then
+echo 'server {
+    listen ###WEB_SECURE_PORT ssl http2;
+
+    server_name ###WEB_SERVER ###WEB_ALIAS;
+
+    ssl_certificate /etc/pki/dummy/localhost.crt;
+    ssl_certificate_key /etc/pki/dummy/localhost.key;
+
+	error_log  /var/log/nginx/error.log;
+	access_log /var/log/nginx/access.log;
+
+    client_max_body_size 1024M;
+    client_body_buffer_size 4M;
+
+    ###WEB_INDEX ###WEB_INDEX.php;
+
+    root ###WEB_DIR;
+
+    location / {
+        try_files $uri $uri/ /###WEB_INDEX.php?$args;
+    }
+
+	location ~ ^/(app_dev|config)\.php(/|$) {
+		fastcgi_pass unix:/var/run/php-fpm/www.sock;
+		fastcgi_split_path_info ^(.+\.php)(/.*)$;
+		include fastcgi_params;
+		fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+		fastcgi_param DOCUMENT_ROOT $realpath_root;
+	}
+
+	location ~ ^/app\.php(/|$) {
+		fastcgi_pass unix:/var/run/php-fpm/www.sock;
+		fastcgi_split_path_info ^(.+\.php)(/.*)$;
+		include fastcgi_params;
+		fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+		fastcgi_param DOCUMENT_ROOT $realpath_root;
+		internal;
+	}
+
+	location ~ \.php$ {
+		fastcgi_pass unix:/var/run/php-fpm/www.sock;
+		fastcgi_split_path_info ^(.+\.php)(/.*)$;
+		include fastcgi_params;
+		fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+		fastcgi_param DOCUMENT_ROOT $realpath_root;
+		internal;
+	}
+
+    location = /favicon.ico {
+        log_not_found off;
+        access_log off;
+    }
+
+    location = /robots.txt {
+        allow all;
+        log_not_found off;
+        access_log off;
+    }
+
+    location ~* ^.+\.(jpg|jpeg|gif|png|svg|js|css|mp3|ogg|mpe?g|avi|zip|gz|bz2?|rar)$ {
+        access_log off;
+        expires max;
+        error_page 404 = /404.html;
+    }
+
+    location ~ /.svn/ {
+      deny all;
+    }
+
+    location ~ /.git/ {
+        deny all;
+    }
+
+    location ~ /\.ht {
+        deny  all;
+    }
+}
+
+server {
+    listen 80;
+
+    server_name ###WEB_SERVER ###WEB_ALIAS;
+
+	error_log  /var/log/nginx/error.log;
+	access_log /var/log/nginx/access.log;
+
+    return 301 https://###WEB_SERVER$request_uri;
+}' > $DST_FILE
+fi
+}
+
+runInstall() {
+	RUN=$1
+	sleep 1;
+	if [ ! -z "${RUN}" ] ; then
+		echo $RUN
+		eval ${RUN[@]}
+	fi
+}
+checkInternet() {
+	code=$(curl -s -o /dev/null -w "%{http_code}" https://www.google.com/)
+	if [ "200" != "${code}" ]; then
+		autoDeployExit
+	fi
+}
+
+checkImage() {
+	FILE=/etc/sysconfig/secure
+	if [ -f "$FILE" ]; then
+		value=$(cat $FILE)
+	else
+		autoDeployExit
+	fi
+	if [ ! -z "${value}" ]; then
+		#curl обращается по https://evrinoma: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@raw.githubusercontent.com/evrinoma/configuration/main/php74.full.serialized
+		#secure = MvV7ef8jRPUSPjeccVF9Zd3zebixEjJ557gPn69T2pFXnd+rTe3j7/eBpCy8yJdU
+		#value = RTEEO/xtKs0LljI0gtJM2KpBeLhb1g5GsuprL6unLGBBFPfnpuhxXCeXTALWvgmF
+		secure=$(curl -L "$(echo -n "aHR0cHM6Ly9ldnJpbm9tYTpnaHBfTFZxdFFyNW9KTEhWM1JuZzlvMzk2T05jeUtGMm80MFIxcjREQHJhdy5naXRodWJ1c2VyY29udGVudC5jb20vZXZyaW5vbWEvY29uZmlndXJhdGlvbi9tYWluL3BocDc0LmZ1bGwuc2VyaWFsaXplZA=="| base64 --decode)")
+
+		if [ "${secure}" != "${value}" ]; then
+			autoDeployExit
+		fi
+	else
+		autoDeployExit
+	fi
+}
+
+autoDeployExit() {
+	 kill -TERM $(ps aux | grep supervisord | grep -v grep | awk '{print $2}')
+}
+
+declare -A ARGS
+
+ARGS=( [ENGINE]= [NODEJS_VER]= [COMPOSER_VER]= [HTTPS]= [CERTS]= [SHOW]= [PASSWD]=PASS [YUM]=true [DNF]=true [DEPLOY]= [SYMFONY]= [MODE]=prod [VHOST]= [XDEBUG_CLIENT]= \
+       [git_clone_link]= [git_clone_dir]= \
+       [git_rm]= \
+       [check_internet]= \
+       [database_host]= [database_name]= [database_port]= [database_user]= [database_password]= \
+       [console]= \
+       [web_port]=80 [web_secure_port]=443 [web_dir]= [web_config]= [web_server]= [web_server_alias]= [web_alias]= [web_admin_email]=nikolns@ite-ng.ru [web_index]=index  )
+STATUS=''
+FILE_NAME=sys.credentials
+TMP=''
+for KEY in "${!ARGS[@]}";
+do
+	TMP=$(echo $(printenv $KEY))
+	EMPTY=$(export | grep $KEY)
+	if [ ! -z "$TMP" ] || [ ! -z "$EMPTY" ]  ; then
+		ARGS[$KEY]=$TMP
+		echo $TMP
+	fi
+done
+
+if [ -z "${ARGS[check_internet]}" ]; then
+	checkInternet
+fi
+
+if [ -z "${ARGS[web_server_alias]}" ]; then
+	ARGS[web_server_alias]=php$(php -v | sed -e "/^PHP/!d" -e "s/.* \([0-9]\+\.[0-9]\+\.[0-9]\+\).*$/\1/" -e "s/\(.*\)[0-9])*/\1/" -e "s/[^0-9]//g").${ARGS[web_alias]}
+fi
+
+if [ ! -z "${ARGS[SHOW]}" ]; then
+	for KEY in "${!ARGS[@]}";
+	do
+		echo [$KEY] = ${ARGS[$KEY]};
+	done
+else
+	for KEY in "${!ARGS[@]}";
+	do
+		unset $KEY
+	done
+fi
+
+if [ "${ARGS[MODE]}" == "prod" ]; then
+	echo ".";
+	rm -rf /etc/php.d/xdebug.ini
+	rm -rf /root/src
+	for value in $(ls /usr/bin/ | grep -ve 'container' | grep 'init.') ;
+	do
+		rm -rf /usr/bin/$value
+	done
+	echo '' > /root/.bash_history
+	rm -rf /opt/container/conf/.composer
+	rm -rf /root/.composer
+else
+	if [[ ! -z "${ARGS[XDEBUG_CLIENT]}" ]] ; then
+		sed -i -e "s@xdebug.client_host = .*@xdebug.client_host = ${ARGS[XDEBUG_CLIENT]}@g" /etc/php.d/xdebug.ini
+	else
+		VERSION=$(php -v | grep cli | grep PHP | awk '{print $2}' | sed  -e 's/\..*//')
+		case "$VERSION" in
+		"7" )
+		;;
+		"8" )
+		IP=$(ip addr sh | sed -n '/\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\}/p' | grep '\.8' | awk '{print $2}' | sed  -e 's/\/.*//')
+		sed -i "s@.*xdebug.client_host \= .*@xdebug.client_host \= $IP@" /etc/php.d/xdebug.ini
+		;;
+		esac
+	fi
+fi
+#до полной уверенности не удаляем пакетные менеджеры
+#if [ ! -z "${ARGS[YUM]}" ]; then echo "." && rpm -e --nodeps yum ; fi
+#if [ ! -z "${ARGS[DNF]}" ]; then echo "." && rpm -e --nodeps dnf ; fi
+
+if [[ ! -z "${ARGS[PASSWD]}" && -d "/root/install" && -f "/root/install/${FILE_NAME}" ]] ; then
+	echo "."
+	echo $(cat /root/install/${FILE_NAME} | grep PASSWD | sed -r 's/.*=(.*)$/\1/') | passwd --stdin root > /dev/null
+fi
+
+if [ ! -z "${ARGS[CERTS]}" ]; then echo "." && ln -s ${ARGS[CERTS]} /etc/pki ; fi
+
+if [ ! -z "${ARGS[NODEJS_VER]}" ] ; then
+	STATUS=$(curl -Is https://rpm.nodesource.com/setup_${ARGS[NODEJS_VER]}.x | head -1 | grep "200")
+	if [ ! -z "${STATUS}" ] ; then
+		rm -rf /var/cache/dnf && \
+		dnf remove -y nodejs && \
+		dnf clean all && \
+		curl --silent --location https://rpm.nodesource.com/setup_${ARGS[NODEJS_VER]}.x | bash -  && \
+		dnf install -y nodejs yarn
+	fi
+fi
+
+if [ ! -z "${ARGS[COMPOSER_VER]}" ] ; then
+    composer self-update ${ARGS[COMPOSER_VER]}
+fi
+
+if [ -z "${ARGS[git_rm]}" ]; then
+	rm -rf /root/.gitconfig
+fi
+
+if [[ ! -z "${ARGS[git_clone_link]}" && ! -z "${ARGS[git_clone_dir]}" ]] ; then
+	if [[ ! -d "${ARGS[git_clone_dir]}" ]] ; then
+		mkdir -p ${ARGS[git_clone_dir]}
+	fi
+	echo "GIT.... cloning to [${ARGS[git_clone_dir]}] from  [${ARGS[git_clone_link]}]"
+	git -C ${ARGS[git_clone_dir]} clone ${ARGS[git_clone_link]}
+fi
+
+#назначение данной функции не очень понятно. Скорее всего примитивная защита от копирования контейнера.
+#checkImage
+
+rm -rf /root/install
+
+case ${ARGS[ENGINE]} in
+	"httpd" )
+		echo "init ENGINE httpd...."
+		if [[ -f /etc/sysconfig/vhost && -z $(cat /etc/sysconfig/vhost | grep "ENGINE") ]] ; then echo 'ENGINE=httpd' >> /etc/sysconfig/vhost; else echo 'ENGINE=httpd' >> /etc/sysconfig/vhost; fi;
+			nohup echo -e 'start apache2\n' | supervisorctl -i 2>&1 &
+			sleep 1 && kill -kill $(ps aux | grep supervisorctl | grep -v grep | awk '{print $2}')
+			if [[ ! -z "${ARGS[DEPLOY]}" && ! -z "${ARGS[web_dir]}" &&  -d "${ARGS[web_dir]}" ]] ; then
+			if [[  ! -z "${ARGS[web_config]}" &&  -f "${ARGS[web_config]}" ]] ; then
+				echo "DEPLOYING CONFIG...."
+				echo "copy ${ARGS[web_config]} to /etc/httpd/conf.d/"
+				cp ${ARGS[web_config]} /etc/httpd/conf.d/vhost.conf
+				echo "permission apache.apache ${ARGS[web_dir]}"
+				chown -R apache.apache ${ARGS[web_dir]}
+				nohup echo -e 'restart httpd\n' | supervisorctl -i 2>&1 &
+				runInstall "${ARGS[console]}"
+				exit 0
+			else
+				echo "WRONG DEPLOYING CONFIG....${ARGS[ENGINE]}"
+			fi
+			if [[  ! -z "${ARGS[SYMFONY]}" &&  ! -z "${ARGS[web_server]}" && ! -z "${ARGS[web_alias]}" ]] ; then
+				echo "DEPLOYING SYMFONY...."
+				createHttpdConfig /etc/httpd/conf.d/vhost.conf
+				sed -i -e "s@###WEB_ALIAS@${ARGS[web_alias]}@g" -i -e "s@###WEB_PORT@${ARGS[web_port]}@g" -i -e "s@###WEB_SECURE_PORT@${ARGS[web_secure_port]}@g" -i -e "s@###WEB_SERVER_ALIAS@${ARGS[web_server_alias]}@g" -i -e "s@###WEB_SERVER@${ARGS[web_server]}@g" -i -e "s@###WEB_DIR@${ARGS[web_dir]}@g" -i -e "s/###WEB_ADMIN_EMAIL/${ARGS[web_admin_email]}/g" /etc/httpd/conf.d/vhost.conf
+				echo "permission apache.apache ${ARGS[web_dir]}"
+				chown -R apache.apache ${ARGS[web_dir]}/..
+				nohup echo -e 'restart httpd\n' | supervisorctl -i 2>&1 &
+				runInstall "${ARGS[console]}"
+				exit 0
+			else
+				echo "WRONG DEPLOYING SYMFONY....${ARGS[ENGINE]}"
+			fi
+		else
+			echo "WRONG PATH....[${ARGS[web_dir]}] or argument not set [${ARGS[DEPLOY]}]"
+		fi
+		;;
+	"nginx" )
+		echo "init ENGINE nginx...."
+		if [[ -f /etc/sysconfig/vhost && -z $(cat /etc/sysconfig/vhost | grep "ENGINE") ]] ; then echo 'ENGINE=nginx' >> /etc/sysconfig/vhost; else echo 'ENGINE=nginx' >> /etc/sysconfig/vhost; fi;
+			nohup echo -e 'start nginx\n' | supervisorctl -i 2>&1 &
+			sleep 1 && kill -kill $(ps aux | grep supervisorctl | grep -v grep | awk '{print $2}')
+			sed -i -e "s@.*\user = apache@user = nginx@"  /etc/php-fpm.d/www.conf  && sed -i -e "s@.*\group = apache@group = nginx@"  /etc/php-fpm.d/www.conf && chown -R root.nginx /var/lib/php/
+			nohup echo -e 'restart php-fpm\n' | supervisorctl -i 2>&1 &
+			sleep 1 && kill -kill $(ps aux | grep supervisorctl | grep -v grep | awk '{print $2}')
+			if [[ ! -z "${ARGS[DEPLOY]}" && ! -z "${ARGS[web_dir]}" &&  -d "${ARGS[web_dir]}" ]] ; then
+				if [[  ! -z "${ARGS[web_config]}" &&  -f "${ARGS[web_config]}" ]] ; then
+					echo "DEPLOYING CONFIG...."
+					echo "copy ${ARGS[web_config]} to /etc/nginx/conf.d/"
+					cp ${ARGS[web_config]} /etc/nginx/conf.d/vhost.conf
+					echo "permission nginx.nginx ${ARGS[web_dir]}"
+					chown -R nginx.nginx ${ARGS[web_dir]}
+					nohup echo -e 'restart nginx\n' | supervisorctl -i 2>&1 &
+					runInstall "${ARGS[console]}"
+					exit 0
+				else
+					echo "WRONG DEPLOYING CONFIG....${ARGS[ENGINE]}"
+				fi
+				if [[  ! -z "${ARGS[SYMFONY]}" &&  ! -z "${ARGS[web_server]}" ]] ; then
+					echo "DEPLOYING SYMFONY...."
+                    if [ ! -z "${ARGS[HTTPS]}" ] ; then
+                        createNginxSecureConfig /etc/nginx/conf.d/vhost.conf
+                    else
+                        createNginxConfig /etc/nginx/conf.d/vhost.conf
+                    fi
+					sed -i -e "s@###WEB_ALIAS@${ARGS[web_alias]}@g" -i -e "s@###WEB_SERVER@${ARGS[web_server]}@g" -i -e "s@###WEB_DIR@${ARGS[web_dir]}@g" -i -e "s@###WEB_SECURE_PORT@${ARGS[web_secure_port]}@g" -i -e "s@###WEB_PORT@${ARGS[web_port]}@g" /etc/nginx/conf.d/vhost.conf
+					case ${ARGS[web_index]} in
+					app|app_dev) if [ "${ARGS[MODE]}" == "prod" ] ; then sed -i -e "s@###WEB_INDEX@app@g" /etc/nginx/conf.d/vhost.conf ; else sed -i -e "s@###WEB_INDEX@app_dev@g" /etc/nginx/conf.d/vhost.conf ; fi
+					;;
+						config|index) sed -i -e "s@###WEB_INDEX@${ARGS[web_index]}@g" /etc/nginx/conf.d/vhost.conf ;
+					;;
+					*)
+						echo "index doesn't set, set default [index]....${ARGS[web_index]}"
+						sed -i -e "s@###WEB_INDEX@index@g" /etc/nginx/conf.d/vhost.conf ;
+					;;
+					esac
+					echo "permission nginx.nginx ${ARGS[web_dir]}"
+					chown -R nginx.nginx ${ARGS[web_dir]}/..
+					nohup echo -e 'restart nginx\n' | supervisorctl -i 2>&1 &
+					runInstall "${ARGS[console]}"
+					exit 0
+				else
+					echo "WRONG DEPLOYING SYMFONY....${ARGS[ENGINE]}"
+				fi
+			else
+				echo "WRONG PATH....[${ARGS[web_dir]}] or argument not set [${ARGS[DEPLOY]}]"
+			fi
+	;;
+esac

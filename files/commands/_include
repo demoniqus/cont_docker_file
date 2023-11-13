@@ -1,0 +1,65 @@
+#!/bin/bash
+
+function implode() {
+  local complexKey=''
+  local args=("$@")
+  for nextKey in "${args[@]:1}";
+  do
+    complexKey=$(glue "${complexKey}" "${nextKey}" '/')
+  done
+  echo "${complexKey}"
+  return 0;
+}
+
+function glue() {
+  local separator=
+  if [[ -n $1 ]] && [[ -n $2 ]]; then
+    if [[ -n $3 ]]; then
+      separator="$3"
+    else
+      separator='_'
+    fi
+  fi
+  echo "$1${separator}$2"
+  return 0
+}
+
+function getProjectDir {
+  local exitCode=1
+  local dir=
+  if [[ -n "${PROJECT_ROOT_DIR}" ]]; then
+    dir="${PROJECT_ROOT_DIR}"
+    exitCode=0
+  elif [[ -n "${CERTS}" ]]; then
+    IFS='/';
+    read -ra ADDR <<< "${CERTS}"
+    #т.к. JWT лежит в var/jwt относительно корня проекта, то удаляем последние два каталога и т.о. получаем рабочую директорию проекта
+    projectDir=("${ADDR[@]:0:$((${#ADDR[@]}-2))}")
+    projectDir=$(implode ${projectDir[*]})
+    # Если отрезан ведущий / от пути, добавим его. Если получился задвоенный //, то подправим его заменой
+    projectDir="/${projectDir}"
+    search='//'
+    replacement='/'
+    projectDir=${projectDir/#${search}/${replacement}}
+    dir="${projectDir}"
+    exitCode=0
+  elif [[ ! -z "${projectDir}" ]];  then
+  	dir="${projectDir}"
+  	exitCode=0
+  elif [[ ! -z "${web_dir}" ]]; then
+  	dir="${web_dir}"
+  	exitCode=0
+  elif [[ ! -z "${PROJECT_DIR}" ]]; then
+    dir="${PROJECT_DIR}"
+    exitCode=0
+  fi
+
+  if [[ -z "${PROJECT_DIR}" ]]; then #здесь лучше проверять не на пустую строку, а на вхождение данной строки в файл ~/.bashrc
+
+    echo "export PROJECT_DIR=${projectDir}" >> ~/.bashrc;
+    #. ~/.bashrc;
+  fi
+
+  echo "${dir}"
+  return $exitCode
+}

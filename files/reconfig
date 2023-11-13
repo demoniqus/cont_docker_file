@@ -1,0 +1,7 @@
+#!/bin/bash
+
+ENGINE=$(cat /etc/sysconfig/vhost | grep ENGINE | sed -r 's/.*=(.*)$/\1/')
+if [[ ! -z $ENGINE ]] ; then
+	crontab -u $ENGINE /etc/crontab.$ENGINE
+	crontab -u $ENGINE -l
+fi

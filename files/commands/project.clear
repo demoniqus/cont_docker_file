@@ -1,0 +1,21 @@
+#!/bin/bash
+RED=$'\e[1;31m'
+NOSTYLE=$'\e[0m'
+#поискать через find
+. /usr/local/bin/_include
+
+projectDir=$(getProjectDir)
+if [[ ! -z "${projectDir}" ]];  then
+
+	cd "$projectDir";
+
+	#ls -d */ | grep -v var
+	rm -rf $(ls -Al | grep -v var | awk '{print $9}');
+	rm -rf "${projectDir}/var/cache";
+	rm -f "${projectDir}/var/excel/reestr/*";
+
+	exec  bash;
+
+else
+	printf "${RED}Рабочая директория проекта не найдена${NOSTYLE}"
+fi

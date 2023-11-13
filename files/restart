@@ -1,0 +1,15 @@
+#!/bin/bash
+ENGINE=$1
+EXECUTE=$(ps aux | grep -vE "grep|restart" | grep $ENGINE | awk '{print $2}')
+if [ ! -z "$EXECUTE" ] ; then
+	echo 'restart '$ENGINE
+	echo -e 'stop '$ENGINE'\n' | supervisorctl -i 2>&1 > /dev/null
+	EXECUTE=$(ps aux | grep -vE "grep|restart" | grep $ENGINE | awk '{print $2}')
+	if [ ! -z "$EXECUTE" ] ; then
+		kill -kill $EXECUTE
+	fi
+	echo -e 'restart '$ENGINE'\n' | supervisorctl -i 2>&1 > /dev/null
+else
+	echo $ENGINE' was stoped'
+	echo -e 'start '$ENGINE'\n' | supervisorctl -i 2>&1 > /dev/null
+fi

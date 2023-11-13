@@ -1,0 +1,33 @@
+#!/bin/bash
+DARKGREY=$'\e[1;30m'
+RED=$'\e[1;31m'
+GREEN=$'\e[1;32m'
+YELLOW=$'\e[1;33m'
+BLUE=$'\e[1;34m'
+PURPLE=$'\e[1;35m'
+AQUA=$'\e[1;36m'
+NOSTYLE=$'\e[0m'
+. /usr/local/bin/_include
+projectDir=$(getProjectDir)
+
+if [ ! -z "${projectDir}" ] && [ -d "$projectDir" ]; then
+  cd "$projectDir";
+  php bin/console a:i;
+#  webpack --env=dev;
+  webpack --mode development;
+  php bin/console cache:clear;
+  cacheDirName='var';
+  if [ ! ${projectDir: -1} = '/' ]; then
+    cacheDirName="/${cacheDirName}";
+  fi
+  chown -R "nginx":"nginx" "${projectDir}${cacheDirName}";
+	#if [[ "${ENGINE}" == 'httpd' ]]; then
+	#	chown -R apache:apache "${projectDir}${cacheDirName}";
+	#elif [[ "${ENGINE}" == 'nginx' ]]; then
+	#	chown -R "${ENGINE}":"${ENGINE}" "${projectDir}${cacheDirName}";
+	#else
+#		printf "${RED}Не удалось переопределить пользователя для рабочего каталога${NOSTYLE}"
+	#fi
+else
+  printf "${RED}Директория проекта не найдена${NOSTYLE}"
+fi;
