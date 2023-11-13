@@ -1,16 +1,44 @@
 #!/bin/bash
 
+installCommonPhpModules () {
+	modules=(
+		 php php-dom php-simplexml php-ssh2 php-xml php-xmlreader php-curl php-date php-exif php-filter php-ftp php-gd php-hash 
+		 php-iconv php-json php-libxml php-pecl-imagick php-mbstring php-mysqlnd php-openssl php-pcre php-posix php-sockets php-spl 
+		 php-tokenizer php-zlib php-pear php-pdo php-session php-devel php-smbclient php-pecl-gearman 
+	);
+
+	for module in ${modules[@]}; do
+		dnf -y install "${module}";
+	done
+}
+
 case "${PHP_VERS}" in 
 	'7.4')
 	xDebPkgName=xdebug-2.9.8
 	composerInstall () {
 		wget https://getcomposer.org/composer-1.phar -O /usr/local/bin/composer %% chmod 755 /usr/local/bin/composer
 	}
+	installPhpModules () {
+		$(installCommonPhpModules);
+		modules=(
+			php-ldap php-xhprof php-ast php-cli php-dba php-dbg php-ffi php-fpm php-gmp 
+			php-lz4 php-geos php-imap php-intl php-odbc php-pggi php-snmp php-soap php-tidy php-zstd 
+			php-pdlib php-pgsql php-pinba php-bcmath php-brotli php-common php-pspell php-snappy php-sodium 
+			php-xmlrpc php-enchant php-libvirt php-opcache php-pecl-apcu-bc php-pecl-memcache php-pecl-redis5 php-pecl-zip 
+		);
+
+		for module in ${modules[@]}; do
+			dnf -y install "${module}";
+		done
+	}
 	;;
 	'8.0')
 	xDebPkgName=xdebug-3.1.5
 	composerIntstall () {
 		curl -sS https://getcomposer.org/installer | php && mv composer.phar /usr/local/bin/composer
+	}
+	installPhpModules () {
+		$(installCommonPhpModules);
 	}
 	;;
 	*) 
@@ -60,13 +88,7 @@ dnf install -y procps
 dnf install -y patch 
 dnf install -y glibc-gconv-extra
 
-
-dnf install -y php php-dom php-simplexml php-ssh2 php-xml php-xmlreader php-curl php-date php-exif php-filter php-ftp php-gd php-hash
-dnf install -y php-iconv php-json php-libxml php-pecl-imagick php-mbstring php-mysqlnd php-openssl php-pcre php-posix php-sockets php-spl
-dnf install -y php-tokenizer php-zlib php-pear php-pdo php-session php-ldap php-xhprof php-ast php-cli php-dba php-dbg php-ffi php-fpm php-gmp
-dnf install -y php-lz4 php-geos php-imap php-intl php-odbc php-pggi php-snmp php-soap php-tidy php-zstd php-devel php-pdlib php-pgsql php-pinba
-dnf install -y php-bcmath php-brotli php-common php-pspell php-snappy php-sodium php-xmlrpc php-enchant php-libvirt php-opcache php-pecl-apcu-bc
-dnf install -y php-pecl-memcache php-pecl-redis5 php-pecl-zip php-smbclient php-pecl-gearman
+$(installPhpModules);
 
 wget https://dl.yarnpkg.com/rpm/yarn.repo -O /etc/yum.repos.d/yarn.repo && dnf -y install yarn npm
 
